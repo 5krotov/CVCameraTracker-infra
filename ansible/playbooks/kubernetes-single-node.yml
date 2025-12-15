@@ -1,0 +1,310 @@
+---
+# kubernetes-single-node.yml
+# Ansible playbook to set up a single-node Kubernetes cluster on Ubuntu
+# Tested with Ubuntu 22.04+ and Kubernetes 1.28+
+
+- name: Set up Single Node Kubernetes Cluster
+  hosts: k8s_control_plane
+  become: yes
+  vars:
+    kubernetes_version: "1.29"  # Change as needed
+    pod_network_cidr: "10.244.0.0/16"
+    containerd_version: "latest"
+
+  tasks:
+    # Prerequisites
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - net-tools
+          - jq
+          - wget
+        state: present
+
+    # Disable swap
+    - name: Disable swap
+      shell: swapoff -a
+      ignore_errors: yes
+
+    - name: Remove swap from fstab
+      lineinfile:
+        path: /etc/fstab
+        state: absent
+        regexp: '^\s*.*swap\s+.*$'
+
+    # Kernel modules and network settings
+    - name: Enable kernel modules
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Persist kernel modules
+      copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+
+    - name: Configure kernel parameters for Kubernetes
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: yes
+        state: present
+        reload: yes
+      loop:
+        - { key: "net.bridge.bridge-nf-call-iptables", value: "1" }
+        - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+        - { key: "net.ipv4.ip_forward", value: "1" }
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    # Install containerd (idempotent - only installs if needed)
+    - name: Check if Docker repository already exists
+      stat:
+        path: /etc/apt/sources.list.d/docker.list
+      register: docker_repo_exists
+
+    - name: Remove conflicting Docker repository files (if upgrading)
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.list
+        - /etc/apt/keyrings/docker.gpg
+      when: docker_repo_exists.stat.exists
+
+    - name: Download Docker GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+        gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      args:
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Set correct permissions on Docker GPG key
+      file:
+        path: /etc/apt/keyrings/docker.gpg
+        mode: '0644'
+
+    - name: Add Docker repository with signed-by option
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_facts['lsb']['codename'] }} stable"
+        state: present
+        filename: docker
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+      when: docker_repo_exists.stat.exists
+
+    - name: Install containerd
+      apt:
+        name: containerd.io
+        state: present
+
+    - name: Create containerd configuration directory
+      file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Generate default containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+      # Remove 'creates' to allow regeneration if needed
+
+    - name: Enable systemd cgroup driver in containerd config
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: '(\s+)SystemdCgroup = false'
+        replace: '\1SystemdCgroup = true'
+
+    - name: Enable CRI plugin - remove disable_plugins line for io.containerd.grpc.v1.cri
+      lineinfile:
+        path: /etc/containerd/config.toml
+        state: absent
+        regexp: '^\s*disable_plugins\s*=\s*\["io.containerd.grpc.v1.cri"\]'
+
+    - name: Verify containerd config has systemd driver enabled
+      shell: grep -A 2 '\[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options\]' /etc/containerd/config.toml | grep SystemdCgroup
+      register: cgroup_check
+      failed_when: cgroup_check.rc != 0
+      ignore_errors: yes
+
+    - name: Debug - show containerd config (systemd section)
+      shell: cat /etc/containerd/config.toml | grep -A 5 SystemdCgroup
+      register: config_debug
+      changed_when: false
+
+    - name: Show containerd config debug
+      debug:
+        msg: "{{ config_debug.stdout_lines }}"
+
+    - name: Restart containerd with new configuration
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Wait for containerd to be fully ready
+      pause:
+        seconds: 5
+
+    - name: Verify containerd socket exists
+      stat:
+        path: /run/containerd/containerd.sock
+      register: containerd_socket
+      failed_when: not containerd_socket.stat.exists
+
+    - name: Verify containerd is running
+      shell: systemctl is-active containerd
+      register: containerd_status
+      failed_when: containerd_status.stdout != "active"
+
+    - name: Test CRI with ctr
+      shell: ctr --version
+      register: ctr_version
+      changed_when: false
+
+    - name: Show ctr version
+      debug:
+        msg: "{{ ctr_version.stdout }}"
+
+    # Install Kubernetes components
+    - name: Add Kubernetes GPG key
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
+        state: present
+
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+        state: present
+
+    - name: Update apt cache after adding Kubernetes repo
+      apt:
+        update_cache: yes
+
+    - name: Install kubelet, kubeadm, and kubectl
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        allow_downgrade: yes
+
+    - name: Mark Kubernetes packages to hold
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Enable and start kubelet
+      systemd:
+        name: kubelet
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    # Initialize Kubernetes cluster
+    - name: Check if cluster is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_admin_conf
+
+    - name: Initialize Kubernetes cluster with kubeadm
+      shell: |
+        kubeadm init \
+          --pod-network-cidr={{ pod_network_cidr }} \
+          --apiserver-advertise-address={{ ansible_facts['default_ipv4']['address'] }} \
+          --cri-socket=unix:///run/containerd/containerd.sock
+      when: not k8s_admin_conf.stat.exists
+      register: kubeadm_init
+
+    # Configure kubectl access
+    - name: Create .kube directory
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Copy admin.conf to user kubeconfig
+      shell: cp /etc/kubernetes/admin.conf /root/.kube/config && chmod 600 /root/.kube/config
+      args:
+        creates: /root/.kube/config
+
+    # Install CNI (Flannel)
+    - name: Download Flannel CNI manifest
+      get_url:
+        url: https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+        dest: /tmp/kube-flannel.yaml
+        timeout: 30
+
+    - name: Apply Flannel CNI
+      shell: kubectl apply -f /tmp/kube-flannel.yaml
+      environment:
+        KUBECONFIG: /root/.kube/config
+      register: flannel_result
+      retries: 3
+      delay: 10
+      until: flannel_result is succeeded
+
+    # Remove control plane taint for single-node cluster
+    - name: Taint the control plane node (for single-node, remove NoSchedule taint)
+      shell: |
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+      environment:
+        KUBECONFIG: /root/.kube/config
+
+    # Verify cluster setup
+    - name: Wait for nodes to be ready
+      shell: kubectl get nodes --no-headers | grep -i ready | wc -l
+      environment:
+        KUBECONFIG: /root/.kube/config
+      register: ready_nodes
+      until: ready_nodes.stdout | int > 0
+      retries: 30
+      delay: 10
+
+    - name: Display cluster info
+      shell: kubectl cluster-info
+      environment:
+        KUBECONFIG: /root/.kube/config
+      register: cluster_info
+
+    - name: Show cluster info
+      debug:
+        msg: "{{ cluster_info.stdout_lines }}"
+
+    - name: Display nodes status
+      shell: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /root/.kube/config
+      register: nodes_status
+
+    - name: Show nodes status
+      debug:
+        msg: "{{ nodes_status.stdout_lines }}"
+
