@@ -13,6 +13,7 @@ data:
       cert_file: ""
       key_file: ""
       upload_dir: "./uploads"
+      frames_dir: "/app/uploads/frames/"
 
     cameras:
       - id: "cam-001"
