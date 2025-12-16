@@ -5,12 +5,12 @@ metadata:
     kompose.cmd: kompose convert -f ../../CVCameraTracker/docker-compose.yml
     kompose.version: 1.37.0 (HEAD)
   labels:
-    io.kompose.service: kafka
-  name: kafka
+    io.kompose.service: kafka-cluster
+  name: kafka-cluster
 spec:
   ports:
     - name: "9092"
       port: 9092
       targetPort: 9092
   selector:
-    io.kompose.service: kafka
+    io.kompose.service: kafka-cluster

@@ -5,25 +5,25 @@ metadata:
     kompose.cmd: kompose convert -f ../../CVCameraTracker/docker-compose.yml
     kompose.version: 1.37.0 (HEAD)
   labels:
-    io.kompose.service: kafka
-  name: kafka
+    io.kompose.service: kafka-cluster
+  name: kafka-cluster
 spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: kafka
+      io.kompose.service: kafka-cluster
   template:
     metadata:
       annotations:
         kompose.cmd: kompose convert -f ../../CVCameraTracker/docker-compose.yml
         kompose.version: 1.37.0 (HEAD)
       labels:
-        io.kompose.service: kafka
+        io.kompose.service: kafka-cluster
     spec:
       containers:
         - env:
             - name: KAFKA_ADVERTISED_HOST_NAME
-              value: kafka
+              value: kafka-cluster
             - name: KAFKA_ZOOKEEPER_CONNECT
               value: zookeeper:2181
             - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
@@ -33,7 +33,7 @@ spec:
             - name: KAFKA_CREATE_TOPICS
               value: "video-frames-tasks:10:1,detection-results:10:1"
           image: wurstmeister/kafka
-          name: kafka
+          name: kafka-cluster
           ports:
             - containerPort: 9092
               protocol: TCP
