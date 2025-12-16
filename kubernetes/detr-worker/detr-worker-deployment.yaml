@@ -34,7 +34,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: detr-worker
-          image: localhost:5000/detr-worker:latest
+          image: localhost:5000/cvcameratracker-worker-detr-worker:latest
           imagePullPolicy: Always
           envFrom:
             - configMapRef:

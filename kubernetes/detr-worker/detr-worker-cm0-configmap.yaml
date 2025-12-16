@@ -10,4 +10,7 @@ data:
   KAFKA_WORKER_GROUP: "detr-worker-group"
   DETR_MODEL: "facebook/detr-resnet-50"
   CONFIDENCE_THRESHOLD: "0.7"
+  HF_HOME: "/home/appuser/.hf"
+  TRANSFORMERS_CACHE: "/home/appuser/.cache/huggingface/transformers"
+  HF_HUB_CACHE: "/home/appuser/.cache/huggingface/hub"
 
