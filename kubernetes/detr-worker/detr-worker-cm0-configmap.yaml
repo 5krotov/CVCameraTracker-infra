@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: detr-worker-config
-  namespace: video-processing
+  namespace: cvcameratracker
 data:
   KAFKA_BROKERS: "kafka-cluster:9092"
   KAFKA_FRAME_TASK_TOPIC: "video-frames-tasks"

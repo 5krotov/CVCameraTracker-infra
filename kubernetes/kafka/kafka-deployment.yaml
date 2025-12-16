@@ -20,6 +20,10 @@ spec:
       labels:
         io.kompose.service: kafka-cluster
     spec:
+      initContainers:
+        - name: wait-zk
+          image: busybox
+          command: ['sh', '-c', 'until nc -z zookeeper 2181; do echo waiting for zookeeper; sleep 2; done;']
       containers:
         - env:
             - name: KAFKA_ADVERTISED_HOST_NAME

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: detr-worker
-  namespace: video-processing
+  namespace: cvcameratracker
   labels:
     app: detr-worker
 spec:
