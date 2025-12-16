@@ -33,6 +33,8 @@ spec:
             - mountPath: /etc/backend/config.yaml
               name: backend-cm0
               subPath: config.yaml
+            - mountPath: /app/uploads # should be the same with backend conf
+              name: uploads-volume
       restartPolicy: Always
       volumes:
         - configMap:
@@ -41,3 +43,6 @@ spec:
                 path: config.yaml
             name: backend-cm0
           name: backend-cm0
+        - name: uploads-volume
+          persistentVolumeClaim:
+            claimName: uploads-pvc

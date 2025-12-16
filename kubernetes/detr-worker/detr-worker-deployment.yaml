@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: detr-worker
+  namespace: video-processing
+  labels:
+    app: detr-worker
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: detr-worker
+  template:
+    metadata:
+      labels:
+        app: detr-worker
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - detr-worker
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: detr-worker
+          image: localhost:5000/detr-worker:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: detr-worker-config
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2"
+              nvidia.com/gpu: "1"  # Adjust based on your cluster
+            limits:
+              memory: "6Gi"
+              cpu: "4"
+              nvidia.com/gpu: "1"
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import torch; print('OK')"
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import torch; print('OK')"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /home/appuser/.cache
+            - mountPath: /app/uploads # should be the same with backend conf
+              name: uploads-volume
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        - name: uploads-volume
+          persistentVolumeClaim:
+            claimName: uploads-pvc
+      terminationGracePeriodSeconds: 30
+      restartPolicy: Always
+

@@ -26,6 +26,12 @@ spec:
               value: kafka
             - name: KAFKA_ZOOKEEPER_CONNECT
               value: zookeeper:2181
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "10"
+            - name: KAFKA_CREATE_TOPICS
+              value: "video-frames-tasks:10:1,detection-results:10:1"
           image: wurstmeister/kafka
           name: kafka
           ports:
