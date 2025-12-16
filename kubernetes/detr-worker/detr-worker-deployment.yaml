@@ -79,12 +79,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: hf
+              mountPath: /home/appuser/.hf
             - name: cache
               mountPath: /home/appuser/.cache
             - mountPath: /app/uploads # should be the same with backend conf
               name: uploads-volume
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: hf
           emptyDir: {}
         - name: cache
           emptyDir: {}

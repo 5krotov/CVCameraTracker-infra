@@ -27,7 +27,7 @@ spec:
           imagePullPolicy: Always
           name: backend
           ports:
-            - containerPort: 8081
+            - containerPort: 8080
               protocol: TCP
           volumeMounts:
             - mountPath: /etc/backend/config.yaml
